@@ -1,6 +1,8 @@
 import bs4
 import requests
 from requests_html import HTMLSession
+import json
+from typing import IO
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -10,17 +12,21 @@ from bs4 import BeautifulSoup
 import uncurl
 
 
-def extract_prices(list_of_strings: bs4.ResultSet|list[bs4.Tag]) -> list[str]:
-    examples = list_of_strings
+def extract_prices(text: str) -> str:
+    return text.split("$")[1].split("+")[0]
+
+def cookies_to_list_of_dict(cookie_file: str) -> list[dict]:
     result = []
-    for _ in examples:
-        _ = _.text
-        prices = _.count('$')
-        dollars_and_more = _.split("$")[1:prices + 1]
-        for _ in dollars_and_more:
-            dollars = _.split("+")[0]
-            result.append(dollars)
+    with open(cookie_file) as file:
+        cookies = file.readlines()
+    for cookie in cookies:
+        parts = cookie.split("=")
+        name = parts[0]
+        value = parts[1]
+        new_cookie = {"name": name, "value":value}
+        result.append(new_cookie)
     return result
+
 
 ZILLOW_HEADERS = {
       # :Authority:
@@ -64,51 +70,93 @@ ZILLOW_HEADERS = {
       "User-Agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
 }
-
+page_number = 1
 URL = "https://www.zillow.com/raleigh-nc/rentals/"
 
-session = HTMLSession()
-zillow_response = session\
-    .get("https://www.zillow.com/raleigh-nc/rentals/", headers={
-        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "accept-language": "en-US,en;q=0.9",
-        "authority": "www.zillow.com",
-        "cache-control": "no-cache",
-        "dnt": "1",
-        "pragma": "no-cache",
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": "Windows",
-        "sec-fetch-dest": "document",
-        "sec-fetch-mode": "navigate",
-        "sec-fetch-site": "none",
-        "sec-fetch-user": "?1",
-        "upgrade-insecure-requests": "1",
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-    }, cookies={
-        "AWSALB": "Yn5H4/1ZSj5ZUD4AvxcZu4YwS6L4B6w9JrnA0ZTLrBT+0c67bVdfbMCHIjAhvY/k/lBrFf1y7r89xvPL3o5yJRyyOqsu1H7Y8ooKudG/ykD3xvfdZVh7uKZ04IjJ",
-        "AWSALBCORS": "Yn5H4/1ZSj5ZUD4AvxcZu4YwS6L4B6w9JrnA0ZTLrBT+0c67bVdfbMCHIjAhvY/k/lBrFf1y7r89xvPL3o5yJRyyOqsu1H7Y8ooKudG/ykD3xvfdZVh7uKZ04IjJ",
-        "JSESSIONID": "A58A0BFAB2292CE2DDEEC524944293B7",
-        "_pxvid": "749d82bf-2814-11ee-a5ad-182dd0262840",
-        "pxcts": "749d91aa-2814-11ee-a5ad-414746486b52",
-        "search": "6|1692573393251%7Crect%3D33.605858864133445%252C-86.5147698271654%252C33.24769256121517%252C-87.05447319630602%26rid%3D73386%26disp%3Dmap%26mdm%3Dauto%26p%3D1%26z%3D1%26listPriceActive%3D1%26fs%3D1%26fr%3D0%26mmm%3D0%26rs%3D0%26ah%3D0%26singlestory%3D0%26housing-connector%3D0%26abo%3D0%26garage%3D0%26pool%3D0%26ac%3D0%26waterfront%3D0%26finished%3D0%26unfinished%3D0%26cityview%3D0%26mountainview%3D0%26parkview%3D0%26waterview%3D0%26hoadata%3D1%26zillow-owned%3D0%263dhome%3D0%26featuredMultiFamilyBuilding%3D0%26commuteMode%3Ddriving%26commuteTimeOfDay%3Dnow%09%0973386%09%7B%22isList%22%3Atrue%2C%22isMap%22%3Atrue%7D%09%09%09%09%09",
-        "zg_anonymous_id": "%22498a8667-b89b-4acb-9346-032c978ae200%22",
-        "zgsession": "1|28a5e2e7-4ad0-400a-979f-a6aa28cab08c",
-        "zguid": "24|%242fd81c75-a7eb-4517-ac9b-06cf624b83b0",
-        "zjs_anonymous_id": "%222fd81c75-a7eb-4517-ac9b-06cf624b83b0%22",
-        "zjs_user_id": "null"
-    })
-# print("Before: \n", zillow_response.json())
-zillow_response.html.render(scrolldown=1, sleep=5)
-zillow_zoup = BeautifulSoup(zillow_response.text, "html.parser")
-links = zillow_zoup.find_all(attrs={"data-test": "property-card-link"})
-span_tags = zillow_zoup.select("span")  # $ {price} + {type}
-addresses = zillow_zoup.select("address")
-examples = []
-results = [_ for _ in span_tags if "$" in _.text]
 
-prices = extract_prices(results)
-print(f"{len(addresses)=}, {len(prices)=}, {len(links)=}")
-for i, a in enumerate(addresses):
-    print(prices[i])
-    print(a.text)
-    print(links[i].attrs["href"])
+session = HTMLSession()
+# my_cookies = cookies_to_list_of_dict("cookies.txt")
+# for cookie in my_cookies:
+#     n = cookie["name"]
+#     v = cookie["value"]
+#     session.cookies.set_cookie(n, v)
+raw_params = '{"mapBounds":{"west":-78.719592,"east":-78.388793,"south":35.869345,"north":36.09583},' \
+             '"isMapVisible":false,' \
+             '"filterState":{"fsba":{"value":false},"fsbo":{"value":false},"nc":{"value":false},"fore":{"value":false},' \
+             '"cmsn":{"value":false},"auc":{"value":false},"fr":{"value":true},"ah":{"value":true}},' \
+             '"isListVisible":true,' \
+             '"pagination":{"currentPage":2}}'
+dict_params  = json.loads(raw_params)
+for _ in range(1,2):
+    page_number = _
+    # print([k for k in dict_params.keys()])
+    dict_params["pagination"]["currentPage"] = _
+    sqs = json.dumps(dict_params)
+
+    parameters = {"searchQueryState": sqs,
+                  "wants": '{"cat1":["listResults"]}'
+    }
+
+    dumped_params = json.dumps(parameters)
+
+    print(f"Page {_}: ")
+    url = "https://www.zillow.com/search/GetSearchPageState.htm"
+    zillow_response = session\
+        .get(url, headers={
+            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "accept-language": "en-US,en;q=0.9",
+            "authority": "www.zillow.com",
+            "cache-control": "no-cache",
+            "dnt": "1",
+            "pragma": "no-cache",
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": "Windows",
+            "sec-fetch-dest": "document",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": "none",
+            "sec-fetch-user": "?1",
+            "upgrade-insecure-requests": "1",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+        },
+             params=parameters,
+             cookies={
+                 "_px3": "3610e2a84c70122debde195f381996766eda325c8e2b46c55ac92de65904e316:uUQvCkrWDIDIlrtrQ4fhT/rCWxLTrcFbT2k4n12De7pBHUITX18fAtH8MhpYhscZSc+9y7BTQuOXunkoqooiIQ==:1000:wvG51Oxp7m7VnxtK8Kg9RaFN+xcQT1taFdkaz/pkAvGC0HkEYv5rzx5RSIe5YsH8ms4o+lCYYXHiSQkWeIcQl4IQrsF1EYN71brbzSqqa1Y3MwVlOJ3O0Dh5acqqJraPCIKD37qb8uqlmAl4lw7ThKXkpuXgBEkk4UOF8tT09XGVCLAaFDecJvdM2Bs15PL00xgP+zez5n67hlTE1iuBbg==",
+                 "_pxff_bsco": "1",
+                 "_pxff_cc": "U2FtZVNpdGU9TGF4Ow==",
+                 "_pxff_ccc": "1",
+                 "_pxff_cfp": "1",
+                 "_pxff_fp": "1",
+                 "_pxff_rf": "1",
+                 "_pxvid": "4f8815a7-2a86-11ee-a047-faa9b5fc5718",
+                 "pxcts": "4f882716-2a86-11ee-a047-49526b4f6276"
+             }
+             )
+    cookies = session.cookies
+    for cookie in cookies:
+        with open("zillowcookies.txt", "a") as file:
+            file.write(str(cookie) + "\"n")
+    print(zillow_response.text)
+    data = zillow_response.json()
+    results = data["cat1"]["searchResults"]["listResults"]
+    for result in results:
+        prices = result["units"]
+        unit_price = prices[0]["price"]
+        unit_beds = prices[0]["beds"]
+        unit_address = result['address']
+        info_string = f"The price of this {unit_beds} br unit is {unit_price}. It is located at {unit_address}."
+        url = result["detailUrl"]
+            print(info_string)
+            print(f"Check it out: https://www.zillow.com/{url}")
+
+    # zillow_response.html.render(scrolldown=3, sleep=5)
+    # zillow_zoup = BeautifulSoup(zillow_response.text, "html.parser")
+    # links = zillow_zoup.find_all(attrs={"data-test": "property-card-link"})
+    # span_tags = zillow_zoup.select("span")  # $ {price} + {type}
+    # addresses = zillow_zoup.select("address")
+    # examples = []
+    # strings_containing_price = [_.text for _ in span_tags if "$" in _.text]
+    # print(f"{len(addresses)=}, {len(strings_containing_price)=}, {len(links)=}")
+    # for i, a in enumerate(addresses):
+    #     print(f"Price: ${extract_prices(strings_containing_price[i])}")
+    #     print(f"Address: {a.text}")
+    #     print(f"Link: https://www.zillow.com{links[i].attrs['href']}")
